@@ -1,3 +1,29 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Tahoma, 'Helvetica Neue', Arial, sans-serif;
+  color: #e8f4ee;
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(53, 224, 178, 0.1) 0%, rgba(53, 224, 178, 0.02) 45%, transparent 70%),
+    #0c1712;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e3b30;
+  border-radius: 4px;
+}
