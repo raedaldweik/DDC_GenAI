@@ -32,7 +32,11 @@ export const streamClaude = async (req: StreamRequest): Promise<string> => {
     body: JSON.stringify({
       model: req.model,
       max_tokens: 1024,
-      temperature: 0.3,
+      // Sampling params (temperature/top_p/top_k) are rejected on Claude 5
+      // models. Thinking is explicitly disabled: this is a short summarization
+      // task and on Sonnet 5 thinking is on by default, which would delay the
+      // first streamed token and consume the max_tokens budget.
+      thinking: { type: 'disabled' },
       stream: true,
       system: req.system,
       messages: [{ role: 'user', content: req.prompt }],
