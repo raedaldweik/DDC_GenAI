@@ -52,6 +52,24 @@ or click "عرض مثال تجريبي" when no report data arrives.
    `https://<your-viya-host>/SASJobExecution/?_file=/Public/ddc/ai_narrative.html`
 3. Assign the data roles (see below).
 
+## Deploy on Railway (this branch)
+
+Quick alternative to SAS-hosted content while iterating — the DDC object just needs an HTTPS URL:
+
+1. On [railway.com](https://railway.com): **New Project → Deploy from GitHub repo** → select this repo
+   and the `railway-deploy` branch. Railway auto-detects the Dockerfile.
+2. In the service **Variables**, add `VITE_ANTHROPIC_API_KEY` (it is passed into the build as a build
+   arg). Optionally `VITE_CLAUDE_MODEL`.
+3. **Settings → Networking → Generate Domain** to get `https://<service>.up.railway.app`.
+4. Use that URL as the Data-Driven Content object's URL in the VA report.
+
+Redeploys are automatic on every push to the branch. If the object renders blank inside VA, ask the
+Viya admin to allow the Railway domain in the environment's Content Security Policy
+(SAS Environment Manager → Configuration → `sas.commons.web.security` → CSP `frame-src`/`connect-src`).
+
+Note: nginx listens on Railway's injected `$PORT` via `nginx.conf.template`; locally the container
+defaults to port 80 (`docker run -p 8080:80 ...`).
+
 ### URL parameters (demo conveniences)
 
 | Param | Purpose |
