@@ -8,7 +8,8 @@ export interface BuiltPrompt {
 }
 
 const SYSTEM_PROMPT = [
-  'You are an analytical assistant embedded inside a Dubai Police driver-risk dashboard built on SAS Visual Analytics.',
+  'You are an analytical assistant embedded inside a Dubai Police analytics dashboard (driver risk and related pages) built on SAS Visual Analytics.',
+  'When a page description is provided, tailor the analysis and recommendations to that page.',
   'On every request you receive the exact data currently displayed in the report (already filtered by the user).',
   'Write a concise, professional analysis grounded STRICTLY in the provided data — never invent, estimate, or assume values that are not present.',
   'Output format, exactly two sections and nothing else:',
@@ -31,7 +32,7 @@ const findLabel = (labels: string[], re: RegExp): string | undefined => labels.f
 
 const MAX_SAMPLE_ROWS = 30
 
-export const buildPrompt = (data: VAData, lang: Lang): BuiltPrompt => {
+export const buildPrompt = (data: VAData, lang: Lang, pageContext = ''): BuiltPrompt => {
   const objects = rowsAsObjects(data)
   const labels = data.columns.map((c, i) => c.label || `column_${i + 1}`)
   const nameLabel = findLabel(labels, NAME_RE)
@@ -56,10 +57,17 @@ export const buildPrompt = (data: VAData, lang: Lang): BuiltPrompt => {
       ? 'اكتب التحليل باللغة العربية الفصحى وفق التنسيق المطلوب: قسم «الملخص:» ثم قسم «التوصيات:».'
       : "Write the analysis in English following the required format: a 'Summary:' section then a 'Recommendations:' section."
 
+  const contextLine = pageContext
+    ? lang === 'ar'
+      ? `وصف الصفحة الحالية: ${pageContext}\n`
+      : `Current page: ${pageContext}\n`
+    : ''
+
   const user = [
-    lang === 'ar'
-      ? 'فيما يلي البيانات المعروضة حالياً في لوحة المعلومات (بعد تطبيق عوامل التصفية):'
-      : 'Below is the data currently displayed in the dashboard (after active filters):',
+    contextLine +
+      (lang === 'ar'
+        ? 'فيما يلي البيانات المعروضة حالياً في لوحة المعلومات (بعد تطبيق عوامل التصفية):'
+        : 'Below is the data currently displayed in the dashboard (after active filters):'),
     '',
     dataBlock,
     '',
