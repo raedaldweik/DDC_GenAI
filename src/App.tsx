@@ -25,7 +25,7 @@ const DEMO_MODE = urlParams.get('demo') !== null
 // Auto-fit: shrink the content font until it fits the panel height, but never
 // below MIN_FONT — past that point the scrollbar takes over for readability.
 const MAX_FONT = 14
-const MIN_FONT = 11
+const MIN_FONT = 12
 const FONT_STEP = 0.5
 
 const UI_TEXT = {
