@@ -46,7 +46,7 @@ const UI_TEXT = {
   en: {
     summaryTab: 'Summary',
     recsTab: 'Recommendations',
-    recsBadge: (n: number) => `${n} items`,
+    recsBadge: (n: number) => `${n} recommendations`,
     waiting: 'Waiting for data from the report…',
     noData: 'No data under the current filters.',
     generating: 'Generating analysis…',
