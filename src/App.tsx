@@ -1,52 +1,62 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import SummaryView from './components/SummaryView'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import RichText from './components/RichText'
 import { streamClaude } from './lib/llm'
+import { splitSections } from './lib/parse'
 import { Lang, buildPrompt } from './lib/prompt'
 import { SAMPLE_MESSAGE } from './lib/sample'
 import { VAData, parseVAMessage } from './lib/va'
 
 type Status = 'waiting' | 'no-data' | 'generating' | 'done' | 'error'
+type Tab = 'summary' | 'recommendations'
 
-// ?key= and ?model= URL overrides let the DDC URL carry the configuration
-// when rebuilding the bundle isn't convenient (demo only — for production the
-// call moves behind a same-origin Viya endpoint and no key exists client-side).
+// URL parameters let one deployment serve every page:
+//   ?key=      Anthropic API key override (demo only)
+//   ?model=    model override
+//   ?context=  one-line page description injected into the prompt per page
+//   ?controls=0  hide the in-iframe language/regenerate controls
+//   ?demo=1    load built-in sample data (standalone testing)
 const urlParams = new URLSearchParams(window.location.search)
 const API_KEY = urlParams.get('key') || import.meta.env.VITE_ANTHROPIC_API_KEY || ''
 const MODEL = urlParams.get('model') || import.meta.env.VITE_CLAUDE_MODEL || 'claude-sonnet-5'
+const PAGE_CONTEXT = urlParams.get('context') || ''
+const SHOW_CONTROLS = urlParams.get('controls') !== '0'
 const DEMO_MODE = urlParams.get('demo') !== null
 
 const UI_TEXT = {
   ar: {
-    title: 'التحليل الذكي للسائق',
+    summaryTab: 'الملخص',
+    recsTab: 'التوصيات',
+    recsBadge: (n: number) => `${n} توصيات`,
     waiting: 'بانتظار البيانات من التقرير…',
-    waitingHint: 'اختر سائقاً في لوحة المعلومات لعرض التحليل الذكي.',
     noData: 'لا توجد بيانات ضمن عوامل التصفية الحالية.',
     generating: 'جارٍ إنشاء التحليل…',
+    empty: 'لا يوجد محتوى في هذا القسم.',
     error: 'تعذر إنشاء التحليل',
     retry: 'إعادة المحاولة',
-    regenerate: 'إعادة التوليد',
+    regenerate: 'إعادة توليد',
     demo: 'عرض مثال تجريبي',
     noKey: 'لم يتم ضبط مفتاح Claude API. أضف VITE_ANTHROPIC_API_KEY عند البناء أو المعامل ?key= في رابط الكائن.',
-    footer: 'يتم إنشاء هذا التحليل تلقائياً بواسطة الذكاء الاصطناعي استناداً إلى بيانات التقرير المعروضة.',
   },
   en: {
-    title: 'Driver AI Analysis',
+    summaryTab: 'Summary',
+    recsTab: 'Recommendations',
+    recsBadge: (n: number) => `${n} items`,
     waiting: 'Waiting for data from the report…',
-    waitingHint: 'Select a driver in the dashboard to view the AI analysis.',
     noData: 'No data under the current filters.',
     generating: 'Generating analysis…',
+    empty: 'Nothing in this section.',
     error: 'Failed to generate the analysis',
     retry: 'Retry',
     regenerate: 'Regenerate',
     demo: 'Show sample',
     noKey: 'Claude API key is not configured. Set VITE_ANTHROPIC_API_KEY at build time or pass ?key= in the object URL.',
-    footer: 'This analysis is generated automatically by AI from the report data currently displayed.',
   },
 } as const
 
 const App = () => {
   const [vaData, setVaData] = useState<VAData | null>(DEMO_MODE ? parseVAMessage(SAMPLE_MESSAGE) : null)
   const [lang, setLang] = useState<Lang>('ar')
+  const [tab, setTab] = useState<Tab>('summary')
   const [text, setText] = useState('')
   const [status, setStatus] = useState<Status>('waiting')
   const [error, setError] = useState('')
@@ -56,6 +66,7 @@ const App = () => {
   const receivedRef = useRef(DEMO_MODE)
 
   const t = UI_TEXT[lang]
+  const sections = useMemo(() => splitSections(text), [text])
 
   // Data pushed by SAS VA on load and on every filter/selection change.
   useEffect(() => {
@@ -106,8 +117,9 @@ const App = () => {
       setStatus('generating')
       setText('')
       setError('')
+      setTab('summary')
 
-      const { system, user } = buildPrompt(vaData, lang)
+      const { system, user } = buildPrompt(vaData, lang, PAGE_CONTEXT)
       streamClaude({ apiKey: API_KEY, model: MODEL, system, prompt: user, signal: controller.signal, onText: setText })
         .then((finalText) => {
           if (controller.signal.aborted) return
@@ -136,52 +148,64 @@ const App = () => {
     setVaData(parseVAMessage(SAMPLE_MESSAGE))
   }
 
+  const hasContent = status === 'done' || (status === 'generating' && text !== '')
+  const streaming = status === 'generating' && text !== ''
+
+  const tabButton = (id: Tab, label: string, badge?: string) => (
+    <button
+      onClick={() => setTab(id)}
+      className={`flex items-center gap-2 pb-1 text-sm font-bold transition-colors ${
+        tab === id ? 'text-white' : 'text-[#6f8f83] hover:text-[#9db8ad]'
+      }`}>
+      <span className={`h-4 w-1 rounded ${tab === id ? 'bg-[#35e0b2]' : 'bg-transparent'}`} />
+      {label}
+      {badge && (
+        <span className='rounded-full border border-[#f2c76e]/40 px-2 py-0.5 text-[10px] font-semibold text-[#f2c76e]'>
+          {badge}
+        </span>
+      )}
+    </button>
+  )
+
   return (
     <div
       dir={lang === 'ar' ? 'rtl' : 'ltr'}
-      className='flex h-full flex-col gap-3 p-4'>
-      <header className='flex flex-wrap items-center gap-3 border-b border-[#1e3b30] pb-3'>
-        <span className='h-5 w-1 rounded bg-[#35e0b2]' />
-        <h1 className='text-lg font-bold text-white'>{t.title}</h1>
-        <span className='rounded-full border border-[#35e0b2]/50 px-3 py-0.5 text-[11px] font-semibold tracking-wider text-[#35e0b2]'>
-          AI · NARRATIVE ✦
-        </span>
-        <div className='ms-auto flex items-center gap-2'>
-          <div className='flex overflow-hidden rounded-md border border-[#1e3b30] text-xs'>
-            {(['ar', 'en'] as const).map((code) => (
-              <button
-                key={code}
-                onClick={() => setLang(code)}
-                className={
-                  lang === code
-                    ? 'bg-[#35e0b2]/20 px-2.5 py-1 font-bold text-[#35e0b2]'
-                    : 'px-2.5 py-1 text-[#6f8f83] hover:text-[#e8f4ee]'
-                }>
-                {code === 'ar' ? 'ع' : 'EN'}
-              </button>
-            ))}
-          </div>
-          {(status === 'done' || status === 'error') && (
+      className='flex h-full flex-col gap-2 p-1'>
+      <div className='flex flex-wrap items-center gap-4 border-b border-[#1e3b30]/70 pb-1.5'>
+        {tabButton('summary', t.summaryTab)}
+        {tabButton(
+          'recommendations',
+          t.recsTab,
+          sections.recommendations.length > 0 ? t.recsBadge(sections.recommendations.length) : undefined
+        )}
+        {SHOW_CONTROLS && (
+          <div className='ms-auto flex items-center gap-1.5'>
             <button
-              onClick={() => generate(true)}
-              title={t.regenerate}
-              className='rounded-md border border-[#1e3b30] px-2.5 py-1 text-xs text-[#6f8f83] hover:border-[#35e0b2]/50 hover:text-[#35e0b2]'>
-              ⟳ {t.regenerate}
+              onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}
+              title={lang === 'ar' ? 'English' : 'عربي'}
+              className='rounded border border-[#1e3b30] px-2 py-0.5 text-[11px] text-[#6f8f83] hover:border-[#35e0b2]/50 hover:text-[#35e0b2]'>
+              {lang === 'ar' ? 'EN' : 'ع'}
             </button>
-          )}
-        </div>
-      </header>
+            {(status === 'done' || status === 'error') && (
+              <button
+                onClick={() => generate(true)}
+                title={t.regenerate}
+                className='rounded border border-[#1e3b30] px-2 py-0.5 text-[11px] text-[#6f8f83] hover:border-[#35e0b2]/50 hover:text-[#35e0b2]'>
+                ⟳
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       <main className='flex-1 overflow-y-auto'>
         {status === 'waiting' && (
-          <div className='flex h-full flex-col items-center justify-center gap-3 text-center'>
-            <div className='text-3xl'>✦</div>
-            <p className='font-semibold text-[#9db8ad]'>{t.waiting}</p>
-            <p className='text-sm text-[#6f8f83]'>{t.waitingHint}</p>
+          <div className='flex h-full flex-col items-center justify-center gap-2 text-center'>
+            <p className='text-sm text-[#9db8ad]'>{t.waiting}</p>
             {showDemoButton && (
               <button
                 onClick={loadSample}
-                className='mt-2 rounded-md border border-[#35e0b2]/50 px-4 py-1.5 text-sm text-[#35e0b2] hover:bg-[#35e0b2]/10'>
+                className='rounded-md border border-[#35e0b2]/50 px-4 py-1.5 text-sm text-[#35e0b2] hover:bg-[#35e0b2]/10'>
                 {t.demo}
               </button>
             )}
@@ -190,38 +214,63 @@ const App = () => {
 
         {status === 'no-data' && (
           <div className='flex h-full items-center justify-center'>
-            <p className='text-[#9db8ad]'>{t.noData}</p>
+            <p className='text-sm text-[#9db8ad]'>{t.noData}</p>
           </div>
         )}
 
         {status === 'generating' && text === '' && (
           <div className='flex h-full flex-col items-center justify-center gap-2'>
-            <span className='animate-pulse text-2xl text-[#35e0b2]'>✦</span>
+            <span className='animate-pulse text-xl text-[#35e0b2]'>✦</span>
             <p className='text-sm text-[#9db8ad]'>{t.generating}</p>
           </div>
         )}
 
-        {(status === 'done' || (status === 'generating' && text !== '')) && (
-          <SummaryView
-            text={text}
-            streaming={status === 'generating'}
-          />
+        {hasContent && (
+          <div className='rounded-lg border border-[#35e0b2]/15 bg-[#07120d]/60 p-3.5 text-[14px] leading-7'>
+            {tab === 'summary' && (
+              <div className='space-y-2'>
+                {sections.summary.map((line, i) => (
+                  <p key={i}>
+                    <RichText text={line} />
+                  </p>
+                ))}
+                {sections.summary.length === 0 && !streaming && <p className='text-[#6f8f83]'>{t.empty}</p>}
+                {streaming && <span className='inline-block animate-pulse text-[#35e0b2]'>▍</span>}
+              </div>
+            )}
+            {tab === 'recommendations' && (
+              <ul className='space-y-2'>
+                {sections.recommendations.map((item, i) => (
+                  <li
+                    key={i}
+                    className='flex gap-2'>
+                    <span className='mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#35e0b2]/70' />
+                    <span>
+                      <RichText text={item} />
+                    </span>
+                  </li>
+                ))}
+                {sections.recommendations.length === 0 && !streaming && (
+                  <li className='text-[#6f8f83]'>{t.empty}</li>
+                )}
+                {streaming && <li className='animate-pulse text-[#35e0b2]'>▍</li>}
+              </ul>
+            )}
+          </div>
         )}
 
         {status === 'error' && (
-          <div className='flex h-full flex-col items-center justify-center gap-3 text-center'>
-            <p className='font-semibold text-[#e08d8d]'>{t.error}</p>
-            <p className='max-w-md break-words text-sm text-[#9db8ad]'>{error}</p>
+          <div className='flex h-full flex-col items-center justify-center gap-2 text-center'>
+            <p className='text-sm font-semibold text-[#e08d8d]'>{t.error}</p>
+            <p className='max-w-md break-words text-xs text-[#9db8ad]'>{error}</p>
             <button
               onClick={() => generate(true)}
-              className='rounded-md border border-[#35e0b2]/50 px-4 py-1.5 text-sm text-[#35e0b2] hover:bg-[#35e0b2]/10'>
+              className='rounded-md border border-[#35e0b2]/50 px-4 py-1 text-sm text-[#35e0b2] hover:bg-[#35e0b2]/10'>
               {t.retry}
             </button>
           </div>
         )}
       </main>
-
-      <footer className='border-t border-[#1e3b30] pt-2 text-[11px] text-[#6f8f83]'>{t.footer}</footer>
     </div>
   )
 }

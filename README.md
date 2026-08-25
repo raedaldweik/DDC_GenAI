@@ -58,7 +58,13 @@ or click "عرض مثال تجريبي" when no report data arrives.
 |-------|---------|
 | `key` | Anthropic API key override — avoids rebuilding when the key changes: `...ai_narrative.html&key=sk-ant-...` |
 | `model` | Model override (default `claude-sonnet-5`) |
+| `context` | One-line page description injected into the prompt, so each page's DDC URL steers its own analysis: `?context=صفحة البلاغات الجنائية` |
+| `controls` | `controls=0` hides the in-iframe language/regenerate buttons (when the VA container design carries its own mock controls) |
 | `demo` | Load built-in sample data immediately (standalone testing) |
+
+The app renders **transparent** with no header of its own — the VA container provides the panel styling,
+title, and chip; the DDC renders only the الملخص/التوصيات tabs and content. Set the DDC object's
+background to transparent in the report for a seamless look.
 
 ## Recommended VA data roles
 
