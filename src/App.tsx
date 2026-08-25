@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import RichText from './components/RichText'
 import { streamClaude } from './lib/llm'
 import { splitSections } from './lib/parse'
@@ -21,6 +21,12 @@ const MODEL = urlParams.get('model') || import.meta.env.VITE_CLAUDE_MODEL || 'cl
 const PAGE_CONTEXT = urlParams.get('context') || ''
 const SHOW_CONTROLS = urlParams.get('controls') !== '0'
 const DEMO_MODE = urlParams.get('demo') !== null
+
+// Auto-fit: shrink the content font until it fits the panel height, but never
+// below MIN_FONT — past that point the scrollbar takes over for readability.
+const MAX_FONT = 14
+const MIN_FONT = 11
+const FONT_STEP = 0.5
 
 const UI_TEXT = {
   ar: {
@@ -64,9 +70,38 @@ const App = () => {
   const abortRef = useRef<AbortController | null>(null)
   const lastKeyRef = useRef('')
   const receivedRef = useRef(DEMO_MODE)
+  const mainRef = useRef<HTMLElement | null>(null)
+  const cardRef = useRef<HTMLDivElement | null>(null)
 
   const t = UI_TEXT[lang]
   const sections = useMemo(() => splitSections(text), [text])
+
+  // Step the font size down until the content fits the visible height (or the
+  // floor is reached). Runs synchronously before paint, so no visible flicker;
+  // each step forces one reflow, capped at (MAX-MIN)/STEP ≈ 6 reads.
+  const fitText = useCallback(() => {
+    const main = mainRef.current
+    const card = cardRef.current
+    if (!main || !card) return
+    let size = MAX_FONT
+    card.style.fontSize = `${size}px`
+    while (size > MIN_FONT && main.scrollHeight > main.clientHeight + 1) {
+      size -= FONT_STEP
+      card.style.fontSize = `${size}px`
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    fitText()
+  })
+
+  useEffect(() => {
+    const main = mainRef.current
+    if (!main) return
+    const observer = new ResizeObserver(() => fitText())
+    observer.observe(main)
+    return () => observer.disconnect()
+  }, [fitText])
 
   // Data pushed by SAS VA on load and on every filter/selection change.
   useEffect(() => {
@@ -198,7 +233,9 @@ const App = () => {
         )}
       </div>
 
-      <main className='flex-1 overflow-y-auto'>
+      <main
+        ref={mainRef}
+        className='flex-1 overflow-y-auto'>
         {status === 'waiting' && (
           <div className='flex h-full flex-col items-center justify-center gap-2 text-center'>
             <p className='text-sm text-[#9db8ad]'>{t.waiting}</p>
@@ -226,7 +263,10 @@ const App = () => {
         )}
 
         {hasContent && (
-          <div className='rounded-lg border border-[#35e0b2]/15 bg-[#07120d]/60 p-3.5 text-[14px] leading-7'>
+          <div
+            ref={cardRef}
+            style={{ fontSize: MAX_FONT, lineHeight: 1.9 }}
+            className='rounded-lg border border-[#35e0b2]/15 bg-[#07120d]/60 p-3.5'>
             {tab === 'summary' && (
               <div className='space-y-2'>
                 {sections.summary.map((line, i) => (
@@ -244,7 +284,7 @@ const App = () => {
                   <li
                     key={i}
                     className='flex gap-2'>
-                    <span className='mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#35e0b2]/70' />
+                    <span className='mt-[0.7em] h-1.5 w-1.5 shrink-0 rounded-full bg-[#35e0b2]/70' />
                     <span>
                       <RichText text={item} />
                     </span>
