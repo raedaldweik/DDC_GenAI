@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import RichText from './components/RichText'
-import { streamClaude } from './lib/llm'
+import { Provider, streamLLM } from './lib/llm'
 import { splitSections } from './lib/parse'
 import { Lang, buildPrompt } from './lib/prompt'
 import { SAMPLE_MESSAGE } from './lib/sample'
@@ -10,14 +10,24 @@ type Status = 'waiting' | 'no-data' | 'generating' | 'done' | 'error'
 type Tab = 'summary' | 'recommendations'
 
 // URL parameters let one deployment serve every page:
-//   ?key=      Anthropic API key override (demo only)
-//   ?model=    model override
-//   ?context=  one-line page description injected into the prompt per page
-//   ?controls=0  hide the in-iframe language/regenerate controls
-//   ?demo=1    load built-in sample data (standalone testing)
+//   ?provider=  'claude' (default) or 'openai' — any OpenAI-compatible
+//               gateway (LiteLLM, vLLM, Ollama...). Implied by ?endpoint=
+//   ?endpoint=  chat-completions URL for the openai provider
+//   ?key=       API key (Claude) or Bearer token (LiteLLM virtual key)
+//   ?model=     model name
+//   ?context=   one-line page description injected into the prompt per page
+//   ?controls=0 hide the in-iframe language/regenerate controls
+//   ?demo=1     load built-in sample data (standalone testing)
 const urlParams = new URLSearchParams(window.location.search)
+const ENDPOINT = urlParams.get('endpoint') || import.meta.env.VITE_LLM_ENDPOINT || ''
+const PROVIDER = (urlParams.get('provider') ||
+  import.meta.env.VITE_LLM_PROVIDER ||
+  (ENDPOINT ? 'openai' : 'claude')) as Provider
 const API_KEY = urlParams.get('key') || import.meta.env.VITE_ANTHROPIC_API_KEY || ''
-const MODEL = urlParams.get('model') || import.meta.env.VITE_CLAUDE_MODEL || 'claude-sonnet-5'
+const MODEL =
+  urlParams.get('model') ||
+  import.meta.env.VITE_CLAUDE_MODEL ||
+  (PROVIDER === 'claude' ? 'claude-sonnet-5' : '')
 const PAGE_CONTEXT = urlParams.get('context') || ''
 const SHOW_CONTROLS = urlParams.get('controls') !== '0'
 const DEMO_MODE = urlParams.get('demo') !== null
@@ -134,9 +144,16 @@ const App = () => {
         setStatus('no-data')
         return
       }
-      if (!API_KEY) {
+      // Claude requires a key; an OpenAI-compatible gateway may not (or may
+      // authenticate at the network level) — but it always needs endpoint+model.
+      if (PROVIDER === 'claude' && !API_KEY) {
         setStatus('error')
         setError(UI_TEXT[lang].noKey)
+        return
+      }
+      if (PROVIDER === 'openai' && (!ENDPOINT || !MODEL)) {
+        setStatus('error')
+        setError('Missing ?endpoint= or ?model= for the OpenAI-compatible provider.')
         return
       }
       // Skip regeneration when VA re-sends an identical payload (e.g. resize).
@@ -155,7 +172,16 @@ const App = () => {
       setTab('summary')
 
       const { system, user } = buildPrompt(vaData, lang, PAGE_CONTEXT)
-      streamClaude({ apiKey: API_KEY, model: MODEL, system, prompt: user, signal: controller.signal, onText: setText })
+      streamLLM({
+        provider: PROVIDER,
+        apiKey: API_KEY,
+        model: MODEL,
+        endpoint: ENDPOINT,
+        system,
+        prompt: user,
+        signal: controller.signal,
+        onText: setText,
+      })
         .then((finalText) => {
           if (controller.signal.aborted) return
           setText(finalText)
