@@ -77,6 +77,30 @@ Works with any roles, but this set gives the richest narrative (from `TRF_DANGER
 - **عدد المركبات**, **المركبات المنتهية**, **المركبات المحجوزة**, **المركبات المطلوبة**, **السوابق الجنائية**
 - الجنسية / الوظيفة (nationality / occupation) for profile color
 
+## On-prem deployment (LiteLLM / any OpenAI-compatible gateway)
+
+The app has two built-in providers. `?provider=openai` (implied whenever `?endpoint=` is present)
+targets any OpenAI-compatible chat-completions endpoint — a **LiteLLM proxy**, vLLM, Ollama, TGI, NIM —
+with streaming and Bearer auth. Combined with SAS-hosted content this gives a fully air-gapped setup:
+
+1. `npm run build` → upload `dist/index.html` to the client's SAS Content (see the Viya hosting section)
+2. DDC object URL:
+   ```
+   https://<viya>/SASJobExecution/?_file=/Public/ddc/ai_narrative.html
+     &endpoint=https://<litellm-host>/v1/chat/completions
+     &model=qwen2.5-72b-instruct
+     &key=sk-<litellm-virtual-key>
+     &context=<page description>
+   ```
+3. Requirements on the client side: the LiteLLM gateway must allow CORS from the Viya origin, be
+   reachable from user workstations over HTTPS with an internally trusted cert, and the virtual key
+   should be a scoped, budgeted key. Different pages/models are just different `model=` values.
+
+For a stricter posture (no key or endpoint visible in the browser), front the gateway with a
+same-origin SAS Viya Job that forwards the request server-side, and point `endpoint=` at the job URL —
+the provider format is unchanged. Register the endpoint in SAS Model Manager (Agentic AI Accelerator)
+for governance.
+
 ## Production path (on-prem LLM)
 
 The browser-side Claude call (`src/lib/llm.ts`) is demo-only: the API key is embedded client-side. For
